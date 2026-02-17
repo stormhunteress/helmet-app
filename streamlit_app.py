@@ -20,7 +20,7 @@ st.set_page_config(
 )
 
 st.title("⚙️ Acceleration Data Analysis")
-st.write("Upload acceleration data (CSV) and analyze the power spectral density using Welch's method.")
+st.write("Upload acceleration data (CSV) and analyse the power spectral density using Welch's method.")
 
 # Sidebar for parameters
 st.sidebar.header("Analysis Parameters")
