@@ -1,6 +1,7 @@
 """
 Backend module for acceleration data analysis.
 Performs Welch power spectral density estimation on 3-axis acceleration data.
+Supports both CSV file loading and NI-DAQ hardware acquisition.
 """
 
 from scipy import signal
@@ -8,6 +9,19 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from typing import Tuple, Dict
+
+try:
+    import nidaqmx
+    from nidaqmx.constants import AcquisitionType
+    NIDAQMX_AVAILABLE = True
+except ImportError:
+    NIDAQMX_AVAILABLE = False
+
+try:
+    import sounddevice as sd
+    SOUNDDEVICE_AVAILABLE = True
+except ImportError:
+    SOUNDDEVICE_AVAILABLE = False
 
 
 def load_acceleration_data(file_path: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray, int]:
@@ -137,4 +151,95 @@ def plot_individual_axes(results: Dict, x_limit: float = 1000) -> plt.Figure:
     axes[2].set_xlabel('Frequency [Hz]')
     
     plt.tight_layout()
+    return fig
+
+
+def acquire_from_hardware(duration: int = 10, fs: int = 5000, 
+                         f_start: int = 400, f_end: int = 1000,
+                         channel_name: str = 'Dev1/ai0:2',
+                         sensitivity_val: float = 10.26/1000) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Acquire acceleration data from NI-DAQ device with frequency sweep stimulation.
+    
+    Args:
+        duration: Acquisition duration in seconds
+        fs: Sampling rate in Hz
+        f_start: Starting frequency for sweep (Hz)
+        f_end: Ending frequency for sweep (Hz)
+        channel_name: NI-DAQ channel name (e.g., 'Dev1/ai0:2')
+        sensitivity_val: Accelerometer sensitivity (V/g)
+        
+    Returns:
+        Tuple of (Accelx, Accely, Accelz) numpy arrays
+    """
+    if not NIDAQMX_AVAILABLE:
+        raise RuntimeError("nidaqmx package not installed. Install with: pip install nidaqmx")
+    
+    # Generate and play frequency sweep
+    if SOUNDDEVICE_AVAILABLE:
+        sound_rate = 5000
+        t = np.linspace(0, duration, int(sound_rate * duration), endpoint=False)
+        freq = np.linspace(f_start, f_end, t.size)
+        phase = 2 * np.pi * np.cumsum(freq) / sound_rate
+        signal_audio = 0.5 * np.sin(phase)
+        sd.play(signal_audio, sound_rate)
+    
+    # Configure and acquire data from NI-DAQ
+    sample_rate = fs
+    samples_to_acq = sample_rate * duration
+    cont_mode = AcquisitionType.CONTINUOUS
+    units_g = nidaqmx.constants.AccelUnits.G
+    sensitivity_mv_g = nidaqmx.constants.AccelSensitivityUnits.VOLTS_PER_G
+    
+    with nidaqmx.Task() as task:
+        task.ai_channels.add_ai_accel_chan(
+            physical_channel=channel_name,
+            units=units_g,
+            sensitivity=sensitivity_val,
+            sensitivity_units=sensitivity_mv_g
+        )
+        task.timing.cfg_samp_clk_timing(
+            sample_rate, 
+            sample_mode=cont_mode, 
+            samps_per_chan=samples_to_acq
+        )
+        data = task.read(number_of_samples_per_channel=samples_to_acq)
+    
+    # Stop audio playback if available
+    if SOUNDDEVICE_AVAILABLE:
+        sd.stop()
+    
+    # Convert to DataFrame and extract channels
+    Accel = pd.DataFrame(data).T
+    Accel.columns = ['x', 'y', 'z']
+    
+    return Accel.x.values, Accel.y.values, Accel.z.values
+
+
+def plot_time_domain(Accelx: np.ndarray, Accely: np.ndarray, Accelz: np.ndarray, 
+                     fs: int = 5000) -> plt.Figure:
+    """
+    Plot acceleration data in time domain.
+    
+    Args:
+        Accelx, Accely, Accelz: Acceleration arrays
+        fs: Sampling rate in Hz
+        
+    Returns:
+        matplotlib Figure object
+    """
+    L = len(Accelx)
+    Ts = 1/fs
+    tv = np.arange(0, L/fs, Ts)
+    
+    fig, ax = plt.subplots(figsize=(12, 6))
+    ax.plot(tv, Accelx, linewidth=1, label='X', color='tab:orange')
+    ax.plot(tv, Accely, linewidth=1, label='Y', color='b')
+    ax.plot(tv, Accelz, linewidth=1, label='Z', color='y')
+    ax.set_title('Acceleration vs Time')
+    ax.set_xlabel('Time (s)')
+    ax.set_ylabel('Acceleration (g)')
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    
     return fig
