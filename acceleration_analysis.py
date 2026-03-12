@@ -10,6 +10,107 @@ import matplotlib.pyplot as plt
 from typing import Tuple, Dict
 
 
+def load_acceleration_data_from_string(csv_content: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray, int]:
+    """
+    Load acceleration data from CSV content string.
+    Automatically skips metadata rows until it finds the x, y, z header.
+    Supports multiple CSV formats.
+    
+    Args:
+        csv_content: CSV content as a string
+        
+    Returns:
+        Tuple of (Accelx, Accely, Accelz, num_columns)
+    """
+    import csv
+    import io
+    
+    try:
+        # Parse CSV content from string
+        reader = csv.reader(io.StringIO(csv_content))
+        rows = list(reader)
+        
+        if len(rows) < 1:
+            raise ValueError("CSV content is empty")
+        
+        # Find the header row (contains x, y, z or similar)
+        header_idx = None
+        for idx, row in enumerate(rows):
+            row_lower = [col.lower().strip() for col in row]
+            # Check if this row contains x, y, z columns
+            if any('x' in col for col in row_lower) and any('y' in col for col in row_lower) and any('z' in col for col in row_lower):
+                header_idx = idx
+                break
+        
+        if header_idx is None:
+            raise ValueError("Could not find header row with 'x', 'y', 'z' columns. Check your CSV format.")
+        
+        # Use the found header
+        header = [col.lower().strip() for col in rows[header_idx]]
+        colnum = len(header)
+        
+        # Find x, y, z column indices
+        x_col = None
+        y_col = None
+        z_col = None
+        
+        for i, col in enumerate(header):
+            if 'x' in col and x_col is None:
+                x_col = i
+            elif 'y' in col and y_col is None:
+                y_col = i
+            elif 'z' in col and z_col is None:
+                z_col = i
+        
+        if x_col is None or y_col is None or z_col is None:
+            raise ValueError("Could not find x, y, z columns in header row")
+        
+        # Extract data rows (skip header and all rows before it)
+        x_data = []
+        y_data = []
+        z_data = []
+        
+        for row_idx, row in enumerate(rows[header_idx + 1:], start=header_idx + 2):
+            try:
+                # Skip empty rows
+                if not row or all(not col.strip() for col in row):
+                    continue
+                
+                # Extract values, handling rows with different lengths
+                x_val = None
+                y_val = None
+                z_val = None
+                
+                if x_col < len(row) and row[x_col].strip():
+                    x_val = pd.to_numeric(row[x_col], errors='coerce')
+                
+                if y_col < len(row) and row[y_col].strip():
+                    y_val = pd.to_numeric(row[y_col], errors='coerce')
+                
+                if z_col < len(row) and row[z_col].strip():
+                    z_val = pd.to_numeric(row[z_col], errors='coerce')
+                
+                # Only add if all three values are valid
+                if pd.notna(x_val) and pd.notna(y_val) and pd.notna(z_val):
+                    x_data.append(x_val)
+                    y_data.append(y_val)
+                    z_data.append(z_val)
+            except Exception as e:
+                continue  # Skip problematic rows
+        
+        Accelx = np.array(x_data, dtype=float)
+        Accely = np.array(y_data, dtype=float)
+        Accelz = np.array(z_data, dtype=float)
+        
+        if len(Accelx) == 0:
+            raise ValueError("No valid acceleration data found in CSV")
+        
+        return Accelx, Accely, Accelz, colnum
+        
+    except Exception as e:
+        raise ValueError(f"Error reading CSV content: {str(e)}")
+
+
 def load_acceleration_data(file_path: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray, int]:
     """
     Load acceleration data from CSV file.

@@ -7,6 +7,7 @@ import os
 
 from acceleration_analysis import (
     load_acceleration_data,
+    load_acceleration_data_from_string,
     compute_welch_psd,
     plot_psd,
     plot_individual_axes
@@ -47,15 +48,13 @@ x_limit = st.sidebar.number_input("Frequency X-axis Limit (Hz)", value=1000, min
 uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
 
 if uploaded_file is not None:
-    # Create temporary file to work with
-    with tempfile.NamedTemporaryFile(delete=False, suffix='.csv') as tmp_file:
-        tmp_file.write(uploaded_file.getbuffer())
-        tmp_path = tmp_file.name
+    # Get file content as string
+    file_content = uploaded_file.getvalue().decode('utf-8')
     
     try:
-        # Load data
+        # Load data from memory
         st.info("Loading acceleration data...")
-        Accelx, Accely, Accelz, colnum = load_acceleration_data(tmp_path)
+        Accelx, Accely, Accelz, colnum = load_acceleration_data_from_string(file_content)
         
         # Display file info
         col1, col2, col3 = st.columns(3)
@@ -160,9 +159,5 @@ if uploaded_file is not None:
                 "- Ensure all data rows have consistent formatting\n"
                 "- Check for inconsistent delimiters (commas, semicolons, tabs)\n"
                 "- Remove any special characters in headers if possible")
-    finally:
-        # Clean up temporary file
-        if os.path.exists(tmp_path):
-            os.remove(tmp_path)
 else:
     st.info("👆 Please upload a CSV file to get started")
